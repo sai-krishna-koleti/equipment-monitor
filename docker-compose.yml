@@ -1,0 +1,165 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      DATABASE_URL: sqlite:////app/data/equipment_events.db
+      REDIS_URL: "redis://:${REDIS_PASSWORD:-}@redis:6379/0"
+      CELERY_RESULT_BACKEND_URL: "redis://:${REDIS_PASSWORD:-}@redis:6379/1"
+      SIMULATOR_API_BASE_URL: http://api:8000
+    command:
+      [
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--workers",
+        "1",
+      ]
+    ports:
+      - "${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8000}:8000"
+    volumes:
+      - sqlite_data:/app/data
+      - simulator_data:/app/app/simulator/files
+    read_only: true
+    tmpfs:
+      - /tmp
+    init: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.core.healthcheck", "api"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command:
+      [
+        "celery",
+        "-A",
+        "app.core.celery_app.celery_app",
+        "worker",
+        "--loglevel=INFO",
+        "--concurrency",
+        "${CELERY_WORKER_CONCURRENCY:-1}",
+        "--prefetch-multiplier=1",
+        "--hostname=worker@%h",
+      ]
+    env_file:
+      - .env
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      DATABASE_URL: sqlite:////app/data/equipment_events.db
+      REDIS_URL: "redis://:${REDIS_PASSWORD:-}@redis:6379/0"
+      CELERY_RESULT_BACKEND_URL: "redis://:${REDIS_PASSWORD:-}@redis:6379/1"
+      SIMULATOR_API_BASE_URL: http://api:8000
+    volumes:
+      - sqlite_data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    init: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.core.healthcheck", "worker"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command:
+      [
+        "celery",
+        "-A",
+        "app.core.celery_app.celery_app",
+        "beat",
+        "--scheduler=app.workers.beat_scheduler:ScheduledTaskBeatScheduler",
+        "--loglevel=INFO",
+      ]
+    env_file:
+      - .env
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      DATABASE_URL: sqlite:////app/data/equipment_events.db
+      REDIS_URL: "redis://:${REDIS_PASSWORD:-}@redis:6379/0"
+      CELERY_RESULT_BACKEND_URL: "redis://:${REDIS_PASSWORD:-}@redis:6379/1"
+      SIMULATOR_API_BASE_URL: http://api:8000
+      CELERY_BEAT_HEARTBEAT_FILE: /tmp/celery-beat-heartbeat
+    volumes:
+      - sqlite_data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    init: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.core.healthcheck", "beat"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - /bin/sh
+      - -c
+      - 'if [ -n "$$REDIS_PASSWORD" ]; then exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"; else exec redis-server --appendonly yes; fi'
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'if [ -n "$$REDIS_PASSWORD" ]; then REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping; else redis-cli ping; fi',
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  sqlite_data:
+  simulator_data:
+  redis_data:

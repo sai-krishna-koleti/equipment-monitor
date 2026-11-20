@@ -1,0 +1,25 @@
+services:
+  api:
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+    command:
+      [
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+      ]
+    volumes:
+      - .:/app:ro
+
+  worker:
+    volumes:
+      - .:/app:ro
+
+  beat:
+    volumes:
+      - .:/app:ro
