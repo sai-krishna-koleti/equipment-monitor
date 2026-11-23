@@ -188,15 +188,6 @@ pytest
 ```
 
 
-
-
-cd "C:\Users\VENKATAVETAPALEM\Desktop\Sai Krishna\equipment-monitor"
-
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --reload
-
 test cases
 
 From the project root, activate your virtual environment and run the test suite:
@@ -225,4 +216,3 @@ If you’re unsure of a test’s exact name, list discovered tests with:
 python -m pytest --collect-only -q
 ```
 
-The project’s test instructions are in the `README.md`.
